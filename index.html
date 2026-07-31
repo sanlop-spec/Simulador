@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard de Rendimiento Académico & Simulador</title>
+  <title>Dashboard de Rendimiento Académico & Simulador Multi-Periodo</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -12,13 +12,13 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-  <!-- 2. Prop-Types (Requisito estricto de Recharts para CDN) -->
+  <!-- 2. Prop-Types -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
 
   <!-- 3. Recharts UMD -->
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
 
-  <!-- 4. Babel Compiler para JSX en navegador -->
+  <!-- 4. Babel Compiler -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
@@ -41,7 +41,6 @@
       ReferenceLine = () => null 
     } = RechartsLib;
 
-    // --- DATOS INICIALES ---
     const INITIAL_SUBJECTS = [
       {
         id: 'sub-1',
@@ -71,15 +70,15 @@
       }
     ];
 
-    // --- MOTOR MATEMÁTICO ---
+    // CÁLCULOS MATEMÁTICOS
     function calculateSubjectSummary(subject) {
       let accumulatedScore = 0;
       let evaluatedWeight = 0;
 
-      subject.assessments.forEach((assessment) => {
-        if (assessment.score !== null && !isNaN(assessment.score)) {
-          accumulatedScore += (assessment.score * assessment.weight) / 100;
-          evaluatedWeight += assessment.weight;
+      subject.assessments.forEach((a) => {
+        if (a.score !== null && !isNaN(a.score)) {
+          accumulatedScore += (a.score * a.weight) / 100;
+          evaluatedWeight += a.weight;
         }
       });
 
@@ -111,8 +110,10 @@
       };
     }
 
-    function calculateGlobalMetrics(subjects) {
-      if (!subjects || subjects.length === 0) return { overallGPA: 0, totalSubjects: 0, passedSubjectsCount: 0, completedPercentage: 0 };
+    function calculateGlobalMetrics(subjects, history) {
+      if (!subjects || subjects.length === 0) {
+        return { overallGPA: 0, totalSubjects: 0, passedSubjectsCount: 0, completedPercentage: 0, cumulativeGPA: 0 };
+      }
 
       let totalGPA = 0;
       let passedCount = 0;
@@ -125,16 +126,26 @@
         if (summary.currentWeightedGrade >= subj.minPassingGrade) passedCount++;
       });
 
+      const overallGPA = Number((totalGPA / subjects.length).toFixed(2));
+
+      // Cálculo del promedio acumulado considerando años/semestres guardados
+      let cumulativeGPA = overallGPA;
+      if (history && history.length > 0) {
+        const totalHistoryGPA = history.reduce((acc, curr) => acc + curr.gpa, 0) + overallGPA;
+        cumulativeGPA = Number((totalHistoryGPA / (history.length + 1)).toFixed(2));
+      }
+
       return {
-        overallGPA: Number((totalGPA / subjects.length).toFixed(2)),
+        overallGPA,
         totalSubjects: subjects.length,
         passedSubjectsCount: passedCount,
         completedPercentage: Number((totalEvaluatedWeight / subjects.length).toFixed(1)),
+        cumulativeGPA
       };
     }
 
-    // --- COMPONENTE PRINCIPAL ---
     function App() {
+      // Estado de materias
       const [subjects, setSubjects] = useState(() => {
         try {
           const saved = localStorage.getItem('academic_app_data');
@@ -144,11 +155,32 @@
         }
       });
 
+      // Estado de historial de periodos/años anteriores
+      const [history, setHistory] = useState(() => {
+        try {
+          const saved = localStorage.getItem('academic_history_data');
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+          return [];
+        }
+      });
+
+      // Modales y formularios
+      const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+      const [newSubjectName, setNewSubjectName] = useState('');
+      const [newSubjectCode, setNewSubjectCode] = useState('');
+      const [newSubjectTarget, setNewSubjectTarget] = useState('9.5');
+      const [periodNameInput, setPeriodNameInput] = useState('');
+
       useEffect(() => {
         localStorage.setItem('academic_app_data', JSON.stringify(subjects));
       }, [subjects]);
 
-      const metrics = useMemo(() => calculateGlobalMetrics(subjects), [subjects]);
+      useEffect(() => {
+        localStorage.setItem('academic_history_data', JSON.stringify(history));
+      }, [history]);
+
+      const metrics = useMemo(() => calculateGlobalMetrics(subjects, history), [subjects, history]);
 
       const updateAssessmentScore = (subjectId, assessmentId, score) => {
         setSubjects((prev) =>
@@ -162,6 +194,51 @@
         );
       };
 
+      const handleAddSubject = (e) => {
+        e.preventDefault();
+        if (!newSubjectName) return;
+
+        const newSubject = {
+          id: 'sub-' + Date.now(),
+          name: newSubjectName,
+          code: newSubjectCode || 'GEN-101',
+          targetGrade: parseFloat(newSubjectTarget) || 9.0,
+          minPassingGrade: 7.0,
+          maxGrade: 10,
+          assessments: [
+            { id: 'a-' + Date.now() + '-1', name: 'Evaluaciones Parciales', weight: 50, score: null },
+            { id: 'a-' + Date.now() + '-2', name: 'Examen Final / Proyecto', weight: 50, score: null },
+          ]
+        };
+
+        setSubjects([...subjects, newSubject]);
+        setNewSubjectName('');
+        setNewSubjectCode('');
+        setIsAddModalOpen(false);
+      };
+
+      const handleDeleteSubject = (subjectId) => {
+        if (confirm('¿Deseas eliminar esta materia?')) {
+          setSubjects(subjects.filter((s) => s.id !== subjectId));
+        }
+      };
+
+      const handleSaveCurrentPeriod = () => {
+        if (!periodNameInput) return;
+        const newEntry = {
+          id: 'hist-' + Date.now(),
+          periodName: periodNameInput,
+          gpa: metrics.overallGPA,
+          date: new Date().toLocaleDateString()
+        };
+        setHistory([...history, newEntry]);
+        setPeriodNameInput('');
+      };
+
+      const handleDeleteHistoryEntry = (id) => {
+        setHistory(history.filter(h => h.id !== id));
+      };
+
       const chartData = subjects.map((subj) => {
         const summary = calculateSubjectSummary(subj);
         return {
@@ -173,47 +250,51 @@
 
       return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
-          <header className="border-b border-slate-800 pb-4 flex justify-between items-center">
+          {/* Header */}
+          <header className="border-b border-slate-800 pb-4 flex flex-col md:flex-row justify-between md:items-center gap-4">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                Dashboard de Rendimiento Académico
+                Dashboard Académico & Histórico GPA
               </h1>
-              <p className="text-slate-400 text-sm mt-1">Cálculo de promedios ponderados y simulador predictivo</p>
+              <p className="text-slate-400 text-sm mt-1">Gestión de materias, promedios ponderados y proyección de años</p>
             </div>
-            <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-semibold">
-              Live App
-            </span>
+            <button 
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm transition shadow-lg shadow-blue-500/20"
+            >
+              + Agregar Materia
+            </button>
           </header>
 
+          {/* Tarjetas KPI */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Promedio General (GPA)</span>
+              <span className="text-slate-400 text-sm font-medium">Promedio del Periodo</span>
               <p className="text-3xl font-extrabold text-white mt-1">{metrics.overallGPA} <span className="text-sm font-normal text-slate-400">/ 10</span></p>
+            </div>
+            <div className="bg-slate-800/60 border border-indigo-500/30 bg-indigo-950/20 p-5 rounded-xl">
+              <span className="text-indigo-300 text-sm font-medium">GPA Acumulado Histórico</span>
+              <p className="text-3xl font-extrabold text-indigo-400 mt-1">{metrics.cumulativeGPA} <span className="text-sm font-normal text-indigo-300">/ 10</span></p>
             </div>
             <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
               <span className="text-slate-400 text-sm font-medium">Materias Registradas</span>
               <p className="text-3xl font-extrabold text-white mt-1">{metrics.totalSubjects}</p>
             </div>
             <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Materias Aprobadas</span>
-              <p className="text-3xl font-extrabold text-emerald-400 mt-1">{metrics.passedSubjectsCount}</p>
-            </div>
-            <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Avance Total del Periodo</span>
+              <span className="text-slate-400 text-sm font-medium">Avance Evaluado</span>
               <p className="text-3xl font-extrabold text-amber-400 mt-1">{metrics.completedPercentage}%</p>
             </div>
           </div>
 
+          {/* Gráfico */}
           <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4 text-slate-200">Promedio Actual por Materia</h2>
+            <h2 className="text-xl font-bold mb-4 text-slate-200">Rendimiento por Materia vs. Aprobatorio</h2>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#94a3b8" />
                   <YAxis domain={[0, 10]} stroke="#94a3b8" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
-                  />
+                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }} />
                   <ReferenceLine y={7} label="Aprobatorio" stroke="#ef4444" strokeDasharray="3 3" />
                   <Bar dataKey="promedio" radius={[6, 6, 0, 0]}>
                     {chartData.map((entry, index) => (
@@ -225,12 +306,20 @@
             </div>
           </div>
 
+          {/* Grid de Materias */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {subjects.map((subject) => {
               const summary = calculateSubjectSummary(subject);
               return (
-                <div key={subject.id} className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl space-y-4">
-                  <div className="flex justify-between items-start">
+                <div key={subject.id} className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl space-y-4 relative group">
+                  <button 
+                    onClick={() => handleDeleteSubject(subject.id)}
+                    className="absolute top-4 right-4 text-slate-500 hover:text-rose-400 text-xs font-bold"
+                  >
+                    Eliminar
+                  </button>
+
+                  <div className="flex justify-between items-start pr-12">
                     <div>
                       <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300">{subject.code}</span>
                       <h3 className="text-lg font-bold text-white mt-1">{subject.name}</h3>
@@ -246,11 +335,11 @@
                       <span className="text-indigo-300 font-semibold">Simulador de Meta: </span>
                       {summary.isTargetAchievable ? (
                         <span className="text-slate-300">
-                          Necesitas promedio de <strong className="text-emerald-400">{summary.requiredScoreForTarget}</strong> en el {summary.remainingWeight}% restante para alcanzar tu meta.
+                          Necesitas promedio de <strong className="text-emerald-400">{summary.requiredScoreForTarget}</strong> en el {summary.remainingWeight}% restante.
                         </span>
                       ) : (
                         <span className="text-rose-400">
-                          Matemáticamente inalcanzable (Requeriría {summary.requiredScoreForTarget}).
+                          Inalcanzable (Requeriría {summary.requiredScoreForTarget}).
                         </span>
                       )}
                     </div>
@@ -262,7 +351,7 @@
                       <div key={assessment.id} className="flex justify-between items-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800">
                         <div>
                           <p className="text-sm font-medium text-slate-200">{assessment.name}</p>
-                          <span className="text-xs text-slate-500">Ponderación: {assessment.weight}%</span>
+                          <span className="text-xs text-slate-500">Peso: {assessment.weight}%</span>
                         </div>
                         <input
                           type="number"
@@ -284,6 +373,109 @@
               );
             })}
           </div>
+
+          {/* Histórico de Periodos / Años Anteriores */}
+          <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl space-y-4">
+            <h2 className="text-xl font-bold text-slate-200">Histórico de Años / Semestres Anteriores</h2>
+            <p className="text-xs text-slate-400">Guarda el promedio general obtenido en periodos pasados para llevar un acumulado global de tu carrera.</p>
+            
+            <div className="flex gap-3">
+              <input 
+                type="text" 
+                placeholder="Ej. 1er Año, Semestre 2025-1" 
+                value={periodNameInput}
+                onChange={(e) => setPeriodNameInput(e.target.value)}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 text-white"
+              />
+              <button 
+                onClick={handleSaveCurrentPeriod}
+                className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-semibold text-white transition"
+              >
+                Guardar Promedio Actual ({metrics.overallGPA})
+              </button>
+            </div>
+
+            {history.length > 0 && (
+              <div className="mt-4 border-t border-slate-800 pt-4 space-y-2">
+                {history.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-sm">
+                    <div>
+                      <p className="font-semibold text-slate-200">{item.periodName}</p>
+                      <span className="text-xs text-slate-500">Registrado el {item.date}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-lg font-bold text-indigo-400">{item.gpa}</span>
+                      <button 
+                        onClick={() => handleDeleteHistoryEntry(item.id)}
+                        className="text-slate-500 hover:text-rose-400 text-xs font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Modal Agregar Materia */}
+          {isAddModalOpen && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-slate-800 border border-slate-700 w-full max-w-md p-6 rounded-xl space-y-4 shadow-2xl">
+                <h3 className="text-lg font-bold text-white">Agregar Nueva Materia</h3>
+                <form onSubmit={handleAddSubject} className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Nombre de la Materia</label>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="Ej. Álgebra Lineal" 
+                      value={newSubjectName} 
+                      onChange={(e) => setNewSubjectName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Código / Clave</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ej. MAT-102" 
+                      value={newSubjectCode} 
+                      onChange={(e) => setNewSubjectCode(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Meta Deseada (0 - 10)</label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      max="10" 
+                      min="0"
+                      value={newSubjectTarget} 
+                      onChange={(e) => setNewSubjectTarget(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsAddModalOpen(false)}
+                      className="px-4 py-2 rounded bg-slate-700 text-slate-300 text-sm hover:bg-slate-600"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500"
+                    >
+                      Crear Materia
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
