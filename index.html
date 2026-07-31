@@ -5,28 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard de Rendimiento Académico & Simulador</title>
 
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- React & React DOM CDNs (Versión 18 Estable) -->
+  <!-- 1. React & React DOM (v18) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-  <!-- Babel Compiler CDN -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 2. Prop-Types (Requisito estricto de Recharts para CDN) -->
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
 
-  <!-- Recharts CDN (Versión Estable UMD) -->
+  <!-- 3. Recharts UMD -->
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
+
+  <!-- 4. Babel Compiler para JSX en navegador -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
 
   <div id="root"></div>
 
   <script type="text/babel">
-    // Detección segura de Recharts desde window
-    const RechartsLib = window.Recharts || window.recharts;
-    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } = RechartsLib;
     const { useState, useEffect, useMemo } = React;
+    
+    // Extracción segura de Recharts
+    const RechartsLib = window.Recharts || window.recharts || {};
+    const { 
+      BarChart = () => null, 
+      Bar = () => null, 
+      XAxis = () => null, 
+      YAxis = () => null, 
+      Tooltip = () => null, 
+      ResponsiveContainer = ({ children }) => <div>{children}</div>, 
+      Cell = () => null, 
+      ReferenceLine = () => null 
+    } = RechartsLib;
 
     // --- DATOS INICIALES ---
     const INITIAL_SUBJECTS = [
@@ -58,7 +71,7 @@
       }
     ];
 
-    // --- LÓGICA MATEMÁTICA ---
+    // --- MOTOR MATEMÁTICO ---
     function calculateSubjectSummary(subject) {
       let accumulatedScore = 0;
       let evaluatedWeight = 0;
@@ -120,7 +133,7 @@
       };
     }
 
-    // --- COMPONENTE APP ---
+    // --- COMPONENTE PRINCIPAL ---
     function App() {
       const [subjects, setSubjects] = useState(() => {
         try {
@@ -160,7 +173,6 @@
 
       return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
-          {/* Encabezado */}
           <header className="border-b border-slate-800 pb-4 flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
@@ -169,11 +181,10 @@
               <p className="text-slate-400 text-sm mt-1">Cálculo de promedios ponderados y simulador predictivo</p>
             </div>
             <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-semibold">
-              GitHub Pages Ready
+              Live App
             </span>
           </header>
 
-          {/* Tarjetas KPI */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
               <span className="text-slate-400 text-sm font-medium">Promedio General (GPA)</span>
@@ -193,7 +204,6 @@
             </div>
           </div>
 
-          {/* Gráfico Recharts */}
           <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl">
             <h2 className="text-xl font-bold mb-4 text-slate-200">Promedio Actual por Materia</h2>
             <div className="h-64 w-full">
@@ -215,7 +225,6 @@
             </div>
           </div>
 
-          {/* Materias y Simulador */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {subjects.map((subject) => {
               const summary = calculateSubjectSummary(subject);
