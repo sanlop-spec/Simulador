@@ -8,25 +8,27 @@
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- React & React DOM CDNs -->
+  <!-- React & React DOM CDNs (Versión 18 Estable) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-  <!-- Babel compiler CDN para JSX -->
+  <!-- Babel Compiler CDN -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Recharts CDN -->
-  <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+  <!-- Recharts CDN (Versión Estable UMD) -->
+  <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
 
   <div id="root"></div>
 
   <script type="text/babel">
+    // Detección segura de Recharts desde window
+    const RechartsLib = window.Recharts || window.recharts;
+    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } = RechartsLib;
     const { useState, useEffect, useMemo } = React;
-    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } = Recharts;
 
-    // --- DATOS INICIALES POR DEFECTO ---
+    // --- DATOS INICIALES ---
     const INITIAL_SUBJECTS = [
       {
         id: 'sub-1',
@@ -56,7 +58,7 @@
       }
     ];
 
-    // --- MOTOR MATEMÁTICO ---
+    // --- LÓGICA MATEMÁTICA ---
     function calculateSubjectSummary(subject) {
       let accumulatedScore = 0;
       let evaluatedWeight = 0;
@@ -97,7 +99,7 @@
     }
 
     function calculateGlobalMetrics(subjects) {
-      if (subjects.length === 0) return { overallGPA: 0, totalSubjects: 0, passedSubjectsCount: 0, completedPercentage: 0 };
+      if (!subjects || subjects.length === 0) return { overallGPA: 0, totalSubjects: 0, passedSubjectsCount: 0, completedPercentage: 0 };
 
       let totalGPA = 0;
       let passedCount = 0;
@@ -118,11 +120,15 @@
       };
     }
 
-    // --- COMPONENTE PRINCIPAL ---
+    // --- COMPONENTE APP ---
     function App() {
       const [subjects, setSubjects] = useState(() => {
-        const saved = localStorage.getItem('academic_app_data');
-        return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
+        try {
+          const saved = localStorage.getItem('academic_app_data');
+          return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
+        } catch (e) {
+          return INITIAL_SUBJECTS;
+        }
       });
 
       useEffect(() => {
@@ -154,7 +160,7 @@
 
       return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
-          {/* Header */}
+          {/* Encabezado */}
           <header className="border-b border-slate-800 pb-4 flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
@@ -163,11 +169,11 @@
               <p className="text-slate-400 text-sm mt-1">Cálculo de promedios ponderados y simulador predictivo</p>
             </div>
             <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-semibold">
-              Live Standalone App
+              GitHub Pages Ready
             </span>
           </header>
 
-          {/* KPIs */}
+          {/* Tarjetas KPI */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
               <span className="text-slate-400 text-sm font-medium">Promedio General (GPA)</span>
@@ -187,7 +193,7 @@
             </div>
           </div>
 
-          {/* Gráfico */}
+          {/* Gráfico Recharts */}
           <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl">
             <h2 className="text-xl font-bold mb-4 text-slate-200">Promedio Actual por Materia</h2>
             <div className="h-64 w-full">
@@ -273,7 +279,8 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
   </script>
 </body>
 </html>
