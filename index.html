@@ -3,479 +3,409 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard de Rendimiento Académico & Simulador Multi-Periodo</title>
+  <title>Control Académico & Simulador Predictivo</title>
 
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- 1. React & React DOM (v18) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- 2. Prop-Types -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-
-  <!-- 3. Recharts UMD -->
-  <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
-
-  <!-- 4. Babel Compiler -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background-color: #fff !important; color: #000 !important; }
+      .print-card { border: 1px solid #e2e8f0 !important; background: #fff !important; color: #000 !important; box-shadow: none !important; }
+      .print-text { color: #0f172a !important; }
+    }
+  </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
 
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
-    
-    // Extracción segura de Recharts
-    const RechartsLib = window.Recharts || window.recharts || {};
-    const { 
-      BarChart = () => null, 
-      Bar = () => null, 
-      XAxis = () => null, 
-      YAxis = () => null, 
-      Tooltip = () => null, 
-      ResponsiveContainer = ({ children }) => <div>{children}</div>, 
-      Cell = () => null, 
-      ReferenceLine = () => null 
-    } = RechartsLib;
+    const { useState, useEffect, useMemo, useRef } = React;
 
-    const INITIAL_SUBJECTS = [
+    const DEFAULT_SUBJECTS = [
       {
-        id: 'sub-1',
-        name: 'Cálculo Multivariable',
+        id: '1',
+        name: 'Cálculo y Modelación',
         code: 'MAT-301',
-        targetGrade: 9.8,
-        minPassingGrade: 7.0,
-        maxGrade: 10,
+        target: 9.8,
         assessments: [
-          { id: 'a1', name: 'Parcial 1', weight: 30, score: 10.0 },
-          { id: 'a2', name: 'Parcial 2', weight: 30, score: 9.5 },
-          { id: 'a3', name: 'Examen Final', weight: 40, score: null },
-        ],
+          { id: 'a1', name: 'Examen Parcial 1', weight: 30, score: 10.0 },
+          { id: 'a2', name: 'Examen Parcial 2', weight: 30, score: 9.5 },
+          { id: 'a3', name: 'Proyecto / Examen Final', weight: 40, score: null }
+        ]
       },
       {
-        id: 'sub-2',
-        name: 'Estructuras de Datos',
+        id: '2',
+        name: 'Estructuras de Datos & Algoritmos',
         code: 'INF-202',
-        targetGrade: 10.0,
-        minPassingGrade: 7.0,
-        maxGrade: 10,
+        target: 10.0,
         assessments: [
-          { id: 'a4', name: 'Proyecto Práctico', weight: 40, score: 10.0 },
-          { id: 'a5', name: 'Algoritmos y Grafos', weight: 30, score: 9.8 },
-          { id: 'a6', name: 'Examen Teórico', weight: 30, score: null },
-        ],
+          { id: 'a4', name: 'Prácticas y Laboratorios', weight: 40, score: 10.0 },
+          { id: 'a5', name: 'Proyecto Final', weight: 60, score: null }
+        ]
       }
     ];
 
-    // CÁLCULOS MATEMÁTICOS
-    function calculateSubjectSummary(subject) {
-      let accumulatedScore = 0;
-      let evaluatedWeight = 0;
-
-      subject.assessments.forEach((a) => {
-        if (a.score !== null && !isNaN(a.score)) {
-          accumulatedScore += (a.score * a.weight) / 100;
-          evaluatedWeight += a.weight;
-        }
-      });
-
-      const currentWeightedGrade = evaluatedWeight > 0 
-        ? Number(((accumulatedScore / evaluatedWeight) * subject.maxGrade).toFixed(2)) 
-        : 0;
-
-      const remainingWeight = 100 - evaluatedWeight;
-      let requiredScoreForTarget = null;
-      let isTargetAchievable = true;
-
-      if (remainingWeight > 0) {
-        const targetAccumulated = (subject.targetGrade / subject.maxGrade) * 100;
-        const neededFromRemaining = targetAccumulated - accumulatedScore;
-        const requiredScore = (neededFromRemaining / remainingWeight) * subject.maxGrade;
-
-        requiredScoreForTarget = Number(requiredScore.toFixed(2));
-        if (requiredScoreForTarget > subject.maxGrade || requiredScoreForTarget < 0) {
-          isTargetAchievable = requiredScoreForTarget <= subject.maxGrade && requiredScoreForTarget >= 0;
-        }
-      }
-
-      return {
-        currentWeightedGrade,
-        evaluatedWeight,
-        remainingWeight,
-        requiredScoreForTarget,
-        isTargetAchievable,
-      };
-    }
-
-    function calculateGlobalMetrics(subjects, history) {
-      if (!subjects || subjects.length === 0) {
-        return { overallGPA: 0, totalSubjects: 0, passedSubjectsCount: 0, completedPercentage: 0, cumulativeGPA: 0 };
-      }
-
-      let totalGPA = 0;
-      let passedCount = 0;
-      let totalEvaluatedWeight = 0;
-
-      subjects.forEach((subj) => {
-        const summary = calculateSubjectSummary(subj);
-        totalGPA += summary.currentWeightedGrade;
-        totalEvaluatedWeight += summary.evaluatedWeight;
-        if (summary.currentWeightedGrade >= subj.minPassingGrade) passedCount++;
-      });
-
-      const overallGPA = Number((totalGPA / subjects.length).toFixed(2));
-
-      // Cálculo del promedio acumulado considerando años/semestres guardados
-      let cumulativeGPA = overallGPA;
-      if (history && history.length > 0) {
-        const totalHistoryGPA = history.reduce((acc, curr) => acc + curr.gpa, 0) + overallGPA;
-        cumulativeGPA = Number((totalHistoryGPA / (history.length + 1)).toFixed(2));
-      }
-
-      return {
-        overallGPA,
-        totalSubjects: subjects.length,
-        passedSubjectsCount: passedCount,
-        completedPercentage: Number((totalEvaluatedWeight / subjects.length).toFixed(1)),
-        cumulativeGPA
-      };
-    }
-
     function App() {
-      // Estado de materias
       const [subjects, setSubjects] = useState(() => {
-        try {
-          const saved = localStorage.getItem('academic_app_data');
-          return saved ? JSON.parse(saved) : INITIAL_SUBJECTS;
-        } catch (e) {
-          return INITIAL_SUBJECTS;
-        }
+        const saved = localStorage.getItem('academic_subjects_v2');
+        return saved ? JSON.parse(saved) : DEFAULT_SUBJECTS;
       });
 
-      // Estado de historial de periodos/años anteriores
       const [history, setHistory] = useState(() => {
-        try {
-          const saved = localStorage.getItem('academic_history_data');
-          return saved ? JSON.parse(saved) : [];
-        } catch (e) {
-          return [];
-        }
+        const saved = localStorage.getItem('academic_history_v2');
+        return saved ? JSON.parse(saved) : [];
       });
 
-      // Modales y formularios
-      const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-      const [newSubjectName, setNewSubjectName] = useState('');
-      const [newSubjectCode, setNewSubjectCode] = useState('');
-      const [newSubjectTarget, setNewSubjectTarget] = useState('9.5');
-      const [periodNameInput, setPeriodNameInput] = useState('');
+      const [newSubName, setNewSubName] = useState('');
+      const [newSubCode, setNewSubCode] = useState('');
+      const [newSubTarget, setNewSubTarget] = useState('9.5');
+      const [periodLabel, setPeriodLabel] = useState('');
+      const fileInputRef = useRef(null);
 
       useEffect(() => {
-        localStorage.setItem('academic_app_data', JSON.stringify(subjects));
+        localStorage.setItem('academic_subjects_v2', JSON.stringify(subjects));
       }, [subjects]);
 
       useEffect(() => {
-        localStorage.setItem('academic_history_data', JSON.stringify(history));
+        localStorage.setItem('academic_history_v2', JSON.stringify(history));
       }, [history]);
 
-      const metrics = useMemo(() => calculateGlobalMetrics(subjects, history), [subjects, history]);
+      // Métricas y Lógica Predictiva
+      const processedSubjects = useMemo(() => {
+        return subjects.map(sub => {
+          let accumulated = 0;
+          let evalWeight = 0;
 
-      const updateAssessmentScore = (subjectId, assessmentId, score) => {
-        setSubjects((prev) =>
-          prev.map((subj) => {
-            if (subj.id !== subjectId) return subj;
-            return {
-              ...subj,
-              assessments: subj.assessments.map((a) => (a.id === assessmentId ? { ...a, score } : a)),
-            };
-          })
-        );
+          sub.assessments.forEach(a => {
+            if (a.score !== null && !isNaN(a.score)) {
+              accumulated += (a.score * a.weight) / 100;
+              evalWeight += a.weight;
+            }
+          });
+
+          const currentGrade = evalWeight > 0 ? Number(((accumulated / evalWeight) * 10).toFixed(2)) : 0;
+          const remainingWeight = 100 - evalWeight;
+
+          let neededScore = null;
+          let status = 'IN_PROGRESS'; // SAFE, ACHIEVABLE, RISKY, CRITICAL
+
+          if (remainingWeight > 0) {
+            const required = ((sub.target - accumulated) / remainingWeight) * 100;
+            neededScore = Number(required.toFixed(1));
+
+            if (neededScore <= 0) status = 'SAFE';
+            else if (neededScore <= 8.5) status = 'ACHIEVABLE';
+            else if (neededScore <= 10.0) status = 'RISKY';
+            else status = 'CRITICAL';
+          } else {
+            status = currentGrade >= sub.target ? 'SAFE' : 'CRITICAL';
+          }
+
+          return { ...sub, currentGrade, evalWeight, remainingWeight, neededScore, status };
+        });
+      }, [subjects]);
+
+      // Promedios
+      const currentGPA = useMemo(() => {
+        if (processedSubjects.length === 0) return 0;
+        const total = processedSubjects.reduce((acc, curr) => acc + curr.currentGrade, 0);
+        return Number((total / processedSubjects.length).toFixed(2));
+      }, [processedSubjects]);
+
+      const cumulativeGPA = useMemo(() => {
+        if (history.length === 0) return currentGPA;
+        const historySum = history.reduce((acc, curr) => acc + curr.gpa, 0);
+        return Number(((historySum + currentGPA) / (history.length + 1)).toFixed(2));
+      }, [history, currentGPA]);
+
+      // Gestores de Eventos
+      const updateScore = (subId, assId, score) => {
+        setSubjects(subjects.map(s => {
+          if (s.id !== subId) return s;
+          return {
+            ...s,
+            assessments: s.assessments.map(a => a.id === assId ? { ...a, score } : a)
+          };
+        }));
       };
 
-      const handleAddSubject = (e) => {
-        e.preventDefault();
-        if (!newSubjectName) return;
+      const addAssessment = (subId) => {
+        const name = prompt('Nombre de la nueva evaluación:', 'Examen Extra / Tarea');
+        if (!name) return;
+        const weightStr = prompt('Porcentaje/Ponderación (%):', '20');
+        const weight = parseFloat(weightStr);
+        if (isNaN(weight) || weight <= 0) return;
 
-        const newSubject = {
-          id: 'sub-' + Date.now(),
-          name: newSubjectName,
-          code: newSubjectCode || 'GEN-101',
-          targetGrade: parseFloat(newSubjectTarget) || 9.0,
-          minPassingGrade: 7.0,
-          maxGrade: 10,
+        setSubjects(subjects.map(s => {
+          if (s.id !== subId) return s;
+          return {
+            ...s,
+            assessments: [...s.assessments, { id: 'a-' + Date.now(), name, weight, score: null }]
+          };
+        }));
+      };
+
+      const addSubject = (e) => {
+        e.preventDefault();
+        if (!newSubName) return;
+        const newSub = {
+          id: Date.now().toString(),
+          name: newSubName,
+          code: newSubCode || ('GEN-' + Math.floor(100 + Math.random() * 900)),
+          target: parseFloat(newSubTarget) || 9.0,
           assessments: [
-            { id: 'a-' + Date.now() + '-1', name: 'Evaluaciones Parciales', weight: 50, score: null },
-            { id: 'a-' + Date.now() + '-2', name: 'Examen Final / Proyecto', weight: 50, score: null },
+            { id: 'a1-' + Date.now(), name: 'Evaluación Parcial', weight: 50, score: null },
+            { id: 'a2-' + Date.now(), name: 'Evaluación Final', weight: 50, score: null }
           ]
         };
-
-        setSubjects([...subjects, newSubject]);
-        setNewSubjectName('');
-        setNewSubjectCode('');
-        setIsAddModalOpen(false);
+        setSubjects([...subjects, newSub]);
+        setNewSubName('');
+        setNewSubCode('');
       };
 
-      const handleDeleteSubject = (subjectId) => {
-        if (confirm('¿Deseas eliminar esta materia?')) {
-          setSubjects(subjects.filter((s) => s.id !== subjectId));
+      const deleteSubject = (id) => {
+        if (confirm('¿Eliminar esta materia?')) {
+          setSubjects(subjects.filter(s => s.id !== id));
         }
       };
 
-      const handleSaveCurrentPeriod = () => {
-        if (!periodNameInput) return;
-        const newEntry = {
-          id: 'hist-' + Date.now(),
-          periodName: periodNameInput,
-          gpa: metrics.overallGPA,
-          date: new Date().toLocaleDateString()
-        };
-        setHistory([...history, newEntry]);
-        setPeriodNameInput('');
+      // Importar / Exportar / PDF
+      const exportBackup = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ subjects, history }));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `respaldo_academico_${new Date().toISOString().slice(0,10)}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
       };
 
-      const handleDeleteHistoryEntry = (id) => {
-        setHistory(history.filter(h => h.id !== id));
+      const importBackup = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const parsed = JSON.parse(event.target.result);
+            if (parsed.subjects) setSubjects(parsed.subjects);
+            if (parsed.history) setHistory(parsed.history);
+            alert('¡Datos importados con éxito!');
+          } catch (err) {
+            alert('Error: El archivo no tiene un formato JSON válido.');
+          }
+        };
+        reader.readAsText(file);
       };
 
-      const chartData = subjects.map((subj) => {
-        const summary = calculateSubjectSummary(subj);
-        return {
-          name: subj.name,
-          promedio: summary.currentWeightedGrade,
-          meta: subj.targetGrade,
-        };
-      });
+      const printReport = () => {
+        window.print();
+      };
 
       return (
-        <div className="p-6 max-w-7xl mx-auto space-y-8">
-          {/* Header */}
-          <header className="border-b border-slate-800 pb-4 flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-8">
+          
+          {/* HEADER PRINCIPAL */}
+          <header className="border-b border-slate-800 pb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                Dashboard Académico & Histórico GPA
-              </h1>
-              <p className="text-slate-400 text-sm mt-1">Gestión de materias, promedios ponderados y proyección de años</p>
+              <h1 className="text-2xl font-bold text-white tracking-tight print-text">Control Académico & Simulador</h1>
+              <p className="text-slate-400 text-sm print-text">Proyección de calificaciones, cálculo ponderado y seguimiento continuo.</p>
             </div>
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm transition shadow-lg shadow-blue-500/20"
-            >
-              + Agregar Materia
-            </button>
+            
+            {/* HERRAMIENTAS Y BARRA DE ESTADO */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-center print-card">
+                <span className="text-xs text-slate-400 block font-medium print-text">Promedio Periodo</span>
+                <span className="text-xl font-bold text-blue-400">{currentGPA}</span>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-center print-card">
+                <span className="text-xs text-slate-400 block font-medium print-text">GPA Acumulado</span>
+                <span className="text-xl font-bold text-emerald-400">{cumulativeGPA}</span>
+              </div>
+
+              {/* BANDERAS DE ACCIÓN NO IMPRIMIBLES */}
+              <div className="flex gap-2 no-print w-full md:w-auto">
+                <button onClick={printReport} title="Imprimir o guardar reporte PDF" className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300 transition">
+                  📄 Reporte
+                </button>
+                <button onClick={exportBackup} title="Exportar respaldo JSON" className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300 transition">
+                  💾 Exportar
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} title="Importar respaldo JSON" className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300 transition">
+                  📂 Cargar
+                </button>
+                <input type="file" ref={fileInputRef} onChange={importBackup} accept=".json" className="hidden" />
+              </div>
+            </div>
           </header>
 
-          {/* Tarjetas KPI */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Promedio del Periodo</span>
-              <p className="text-3xl font-extrabold text-white mt-1">{metrics.overallGPA} <span className="text-sm font-normal text-slate-400">/ 10</span></p>
-            </div>
-            <div className="bg-slate-800/60 border border-indigo-500/30 bg-indigo-950/20 p-5 rounded-xl">
-              <span className="text-indigo-300 text-sm font-medium">GPA Acumulado Histórico</span>
-              <p className="text-3xl font-extrabold text-indigo-400 mt-1">{metrics.cumulativeGPA} <span className="text-sm font-normal text-indigo-300">/ 10</span></p>
-            </div>
-            <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Materias Registradas</span>
-              <p className="text-3xl font-extrabold text-white mt-1">{metrics.totalSubjects}</p>
-            </div>
-            <div className="bg-slate-800/60 border border-slate-700/50 p-5 rounded-xl">
-              <span className="text-slate-400 text-sm font-medium">Avance Evaluado</span>
-              <p className="text-3xl font-extrabold text-amber-400 mt-1">{metrics.completedPercentage}%</p>
-            </div>
-          </div>
+          {/* FORMULARIO AGREGAR MATERIA */}
+          <section className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl no-print">
+            <form onSubmit={addSubject} className="flex flex-col md:flex-row gap-3 items-center">
+              <input 
+                type="text" 
+                placeholder="Nombre de la materia..." 
+                value={newSubName} 
+                onChange={e => setNewSubName(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 w-full"
+              />
+              <input 
+                type="text" 
+                placeholder="Código (Ej. MAT-101)" 
+                value={newSubCode} 
+                onChange={e => setNewSubCode(e.target.value)}
+                className="w-full md:w-36 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <span className="text-xs text-slate-400 whitespace-nowrap">Meta:</span>
+                <input 
+                  type="number" step="0.1" min="0" max="10" 
+                  value={newSubTarget} 
+                  onChange={e => setNewSubTarget(e.target.value)}
+                  className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-center text-white focus:outline-none focus:border-blue-500"
+                />
+                <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition w-full md:w-auto whitespace-nowrap">
+                  + Agregar
+                </button>
+              </div>
+            </form>
+          </section>
 
-          {/* Gráfico */}
-          <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4 text-slate-200">Rendimiento por Materia vs. Aprobatorio</h2>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="name" stroke="#94a3b8" />
-                  <YAxis domain={[0, 10]} stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }} />
-                  <ReferenceLine y={7} label="Aprobatorio" stroke="#ef4444" strokeDasharray="3 3" />
-                  <Bar dataKey="promedio" radius={[6, 6, 0, 0]}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.promedio >= 8.5 ? '#3b82f6' : entry.promedio >= 7.0 ? '#10b981' : '#f59e0b'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* MATERIAS Y TARJETAS SIMULADORAS */}
+          <section className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-200 print-text">Materias del Periodo</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {processedSubjects.map(sub => (
+                <div key={sub.id} className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-4 relative flex flex-col justify-between print-card">
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="text-xs font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded mr-2">{sub.code}</span>
+                        
+                        {/* ETANQUETAS DE SALUD ACADÉMICA */}
+                        {sub.status === 'SAFE' && <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">🟢 Meta Asegurada</span>}
+                        {sub.status === 'ACHIEVABLE' && <span className="text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">🔵 En Trayecto</span>}
+                        {sub.status === 'RISKY' && <span className="text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">🟠 Exigencia Alta</span>}
+                        {sub.status === 'CRITICAL' && <span className="text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-full">🔴 Meta Comprometida</span>}
 
-          {/* Grid de Materias */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {subjects.map((subject) => {
-              const summary = calculateSubjectSummary(subject);
-              return (
-                <div key={subject.id} className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl space-y-4 relative group">
-                  <button 
-                    onClick={() => handleDeleteSubject(subject.id)}
-                    className="absolute top-4 right-4 text-slate-500 hover:text-rose-400 text-xs font-bold"
-                  >
-                    Eliminar
-                  </button>
-
-                  <div className="flex justify-between items-start pr-12">
-                    <div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300">{subject.code}</span>
-                      <h3 className="text-lg font-bold text-white mt-1">{subject.name}</h3>
+                        <h3 className="text-base font-bold text-white mt-2 print-text">{sub.name}</h3>
+                      </div>
+                      <button onClick={() => deleteSubject(sub.id)} className="text-slate-600 hover:text-rose-400 text-xs no-print transition">
+                        Eliminar
+                      </button>
                     </div>
-                    <div className="text-right">
-                      <span className="text-2xl font-black text-blue-400">{summary.currentWeightedGrade}</span>
-                      <p className="text-xs text-slate-400">Meta: {subject.targetGrade}</p>
+
+                    <div className="flex justify-between items-center text-xs mt-3 mb-1 print-text">
+                      <span className="text-slate-400">Promedio actual: <strong className="text-white print-text">{sub.currentGrade}</strong></span>
+                      <span className="text-slate-400">Meta: <strong className="text-blue-400">{sub.target}</strong></span>
                     </div>
+
+                    {/* CAJA PREDICTIVA */}
+                    {sub.remainingWeight > 0 ? (
+                      <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-xs mt-2 print-card">
+                        {sub.neededScore <= 10 && sub.neededScore >= 0 ? (
+                          <p className="text-slate-300 print-text">
+                            Requiere <span className="text-emerald-400 font-bold">{sub.neededScore}</span> en el {sub.remainingWeight}% restante para alcanzar la meta.
+                          </p>
+                        ) : sub.neededScore < 0 ? (
+                          <p className="text-emerald-400 font-medium">
+                            ¡Felicidades! Ya alcanzaste el puntaje necesario para tu meta.
+                          </p>
+                        ) : (
+                          <p className="text-rose-400 font-medium">
+                            Matemáticamente inalcanzable (Requeriría {sub.neededScore} en el {sub.remainingWeight}% restante).
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-xs mt-2 text-slate-400 print-card">
+                        Evaluación del 100% concluida.
+                      </div>
+                    )}
                   </div>
 
-                  {summary.remainingWeight > 0 && (
-                    <div className="p-3 bg-indigo-950/40 border border-indigo-500/20 rounded-lg text-xs">
-                      <span className="text-indigo-300 font-semibold">Simulador de Meta: </span>
-                      {summary.isTargetAchievable ? (
-                        <span className="text-slate-300">
-                          Necesitas promedio de <strong className="text-emerald-400">{summary.requiredScoreForTarget}</strong> en el {summary.remainingWeight}% restante.
-                        </span>
-                      ) : (
-                        <span className="text-rose-400">
-                          Inalcanzable (Requeriría {summary.requiredScoreForTarget}).
-                        </span>
-                      )}
+                  {/* EVALUACIONES */}
+                  <div className="space-y-2 border-t border-slate-800/80 pt-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wider block">Evaluaciones</span>
+                      <button onClick={() => addAssessment(sub.id)} className="text-[11px] text-blue-400 hover:underline no-print font-medium">
+                        + Añadir corte
+                      </button>
                     </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Evaluaciones</h4>
-                    {subject.assessments.map((assessment) => (
-                      <div key={assessment.id} className="flex justify-between items-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800">
-                        <div>
-                          <p className="text-sm font-medium text-slate-200">{assessment.name}</p>
-                          <span className="text-xs text-slate-500">Peso: {assessment.weight}%</span>
-                        </div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="10"
-                          step="0.1"
-                          placeholder="Sin nota"
-                          value={assessment.score ?? ''}
-                          onChange={(e) => {
+                    {sub.assessments.map(ass => (
+                      <div key={ass.id} className="flex justify-between items-center text-xs bg-slate-950/60 p-2 rounded-lg border border-slate-800/50 print-card">
+                        <span className="text-slate-300 font-medium print-text">{ass.name} <span className="text-slate-500">({ass.weight}%)</span></span>
+                        <input 
+                          type="number" min="0" max="10" step="0.1" 
+                          placeholder="Sin nota" 
+                          value={ass.score ?? ''} 
+                          onChange={e => {
                             const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                            updateAssessmentScore(subject.id, assessment.id, val);
+                            updateScore(sub.id, ass.id, val);
                           }}
-                          className="w-20 bg-slate-800 border border-slate-700 text-white text-sm rounded px-2 py-1 text-right focus:outline-none focus:border-blue-500"
+                          className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500 print-card print-text"
                         />
                       </div>
                     ))}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </section>
 
-          {/* Histórico de Periodos / Años Anteriores */}
-          <div className="bg-slate-800/60 border border-slate-700/50 p-6 rounded-xl space-y-4">
-            <h2 className="text-xl font-bold text-slate-200">Histórico de Años / Semestres Anteriores</h2>
-            <p className="text-xs text-slate-400">Guarda el promedio general obtenido en periodos pasados para llevar un acumulado global de tu carrera.</p>
-            
-            <div className="flex gap-3">
+          {/* HISTORIAL MULTI-PERIODO */}
+          <section className="bg-slate-900/60 border border-slate-800 p-5 rounded-xl space-y-4 print-card">
+            <div>
+              <h2 className="text-base font-semibold text-slate-200 print-text">Histórico Acumulado de Periodos</h2>
+              <p className="text-xs text-slate-400 print-text">Guarda tus semestres o años concluidos para mantener el cálculo exacto del promedio global de tu carrera.</p>
+            </div>
+
+            <div className="flex gap-2 no-print">
               <input 
                 type="text" 
-                placeholder="Ej. 1er Año, Semestre 2025-1" 
-                value={periodNameInput}
-                onChange={(e) => setPeriodNameInput(e.target.value)}
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 text-white"
+                placeholder="Nombre del periodo (Ej. 1er Año / Semestre 2025-1)" 
+                value={periodLabel} 
+                onChange={e => setPeriodLabel(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
               />
               <button 
-                onClick={handleSaveCurrentPeriod}
-                className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-semibold text-white transition"
+                onClick={() => {
+                  if (!periodLabel) return;
+                  setHistory([...history, { id: Date.now().toString(), label: periodLabel, gpa: currentGPA }]);
+                  setPeriodLabel('');
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition"
               >
-                Guardar Promedio Actual ({metrics.overallGPA})
+                Cerrar Periodo ({currentGPA})
               </button>
             </div>
 
             {history.length > 0 && (
-              <div className="mt-4 border-t border-slate-800 pt-4 space-y-2">
-                {history.map((item) => (
-                  <div key={item.id} className="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                {history.map(h => (
+                  <div key={h.id} className="bg-slate-950 border border-slate-800 p-3 rounded-lg flex justify-between items-center text-xs print-card">
                     <div>
-                      <p className="font-semibold text-slate-200">{item.periodName}</p>
-                      <span className="text-xs text-slate-500">Registrado el {item.date}</span>
+                      <p className="font-semibold text-slate-200 print-text">{h.label}</p>
+                      <span className="text-slate-500 print-text">Promedio: {h.gpa}</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-lg font-bold text-indigo-400">{item.gpa}</span>
-                      <button 
-                        onClick={() => handleDeleteHistoryEntry(item.id)}
-                        className="text-slate-500 hover:text-rose-400 text-xs font-bold"
-                      >
-                        ✕
-                      </button>
-                    </div>
+                    <button 
+                      onClick={() => setHistory(history.filter(item => item.id !== h.id))}
+                      className="text-slate-600 hover:text-rose-400 font-bold px-1 no-print"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Modal Agregar Materia */}
-          {isAddModalOpen && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-800 border border-slate-700 w-full max-w-md p-6 rounded-xl space-y-4 shadow-2xl">
-                <h3 className="text-lg font-bold text-white">Agregar Nueva Materia</h3>
-                <form onSubmit={handleAddSubject} className="space-y-3">
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Nombre de la Materia</label>
-                    <input 
-                      type="text" 
-                      required 
-                      placeholder="Ej. Álgebra Lineal" 
-                      value={newSubjectName} 
-                      onChange={(e) => setNewSubjectName(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Código / Clave</label>
-                    <input 
-                      type="text" 
-                      placeholder="Ej. MAT-102" 
-                      value={newSubjectCode} 
-                      onChange={(e) => setNewSubjectCode(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Meta Deseada (0 - 10)</label>
-                    <input 
-                      type="number" 
-                      step="0.1" 
-                      max="10" 
-                      min="0"
-                      value={newSubjectTarget} 
-                      onChange={(e) => setNewSubjectTarget(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="flex gap-2 justify-end pt-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setIsAddModalOpen(false)}
-                      className="px-4 py-2 rounded bg-slate-700 text-slate-300 text-sm hover:bg-slate-600"
-                    >
-                      Cancelar
-                    </button>
-                    <button 
-                      type="submit" 
-                      className="px-4 py-2 rounded bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500"
-                    >
-                      Crear Materia
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
         </div>
       );
     }
